@@ -172,7 +172,7 @@ def parse_args():
     parser.add_argument('--set_seed', help='set random seed', default = None, type=int)
     parser.add_argument('--random_seed', help='set random seed to a random number', action = 'store_true', default=None)
 
-    parser.add_argument('--log', help='activate logging to neptune', action='store_true', default=False)
+    parser.add_argument('--log', help='activate logging to wandb', action='store_true', default=False)
     parser.add_argument('--job_id', help='slurm job id', default=None, type = str)
 
     # EXPERIMENT parameters, specific to EVALUATION

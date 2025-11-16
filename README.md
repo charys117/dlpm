@@ -14,7 +14,7 @@ This repo provides the tools for training, evaluation, and generation of data us
   
 - **Neural Network Architecture**: If you want to change the neural networks used in the DLPM, head to the `dlpm/models` directory. This is where all the neural network models are defined and can be customized according to your needs.
   
-- **Logging Configuration**: To customize how logging is handled, you can heritate from `bem/Logger.py` for integrating your own logger. An example of a custom logging setup is available in `dlpm/NeptuneLogger.py`.
+- **Logging Configuration**: To customize how logging is handled, you can heritate from `bem/Logger.py` for integrating your own logger. An example of a custom Weights & Biases logging setup is available in `dlpm/NeptuneLogger.py`.
 
 - **Experiment Workflow**: The `dlpm/dlpm_experiment` file orchestrates the initialization of the training, evaluation, and data generation processes. To integrate your modifications into the experiment flow, update the `init` functions here. These functions will be provided to the `Experiment` class from the `bem` library.
 
@@ -72,6 +72,74 @@ python ./eval.py --config mnist --name dlpm_test --method dlpm --epochs 100 --ev
 - `--eval`: Specifies the evaluation checkpoint to use.
 - `--generate`: Number of samples to generate.
 - `--reverse_steps`: Number of reverse steps to use during the generation process.
+
+## Quick Reproduction Guide
+
+The commands below assume you already cloned this repository and that you would like to work inside a Conda environment named `dlpm`.
+
+### 1. Create & activate the Conda environment
+
+```bash
+conda create -n dlpm python=3.10 -y
+conda activate dlpm
+python -m pip install --upgrade pip
+```
+
+### 2. Install PyTorch
+
+Install the PyTorch + torchvision build that matches your hardware directly from [pytorch.org](https://pytorch.org/get-started/locally/). For example, CUDA 12.1 users can run:
+
+```bash
+pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+```
+
+### 3. Install the Python dependencies
+
+Most requirements are listed in `bem/requirements.txt`, so after PyTorch is installed run:
+
+```bash
+pip install -r bem/requirements.txt
+```
+
+Some optional components live outside that list:
+
+- `pip install torchquad imageio tensorboard` (needed for the Lévy samplers, TinyImageNet loader, and LIM/TensorBoard logging)
+- `pip install wandb` and run `wandb login` (or set `WANDB_API_KEY`) if you want remote logging; configure `WANDB_PROJECT`, `WANDB_ENTITY`, etc. as needed for `dlpm/NeptuneLogger.py`.
+- `pip install torchlevy` when you plan to run the LIM baseline (`--method lim` or the scripts inside `dlpm/methods/LIM`).
+
+### 4. Data preparation
+
+`bem/datasets/__init__.py` expects datasets to live under `./data`. Torchvision datasets such as MNIST, CIFAR-10, CelebA, etc. will be downloaded automatically the first time you train. Toy 2‑D datasets are generated on the fly (`data/toy` already stores the masks). TinyImageNet must be downloaded manually into `data/tiny-imagenet-200`.
+
+### 5. Optional LIM CUDA extensions
+
+When you run LIM (`--method lim` or `dlpm/methods/LIM/main.py`), custom CUDA/CPP operators from `dlpm/methods/LIM/op/*.cu` are JIT-compiled via `torch.utils.cpp_extension.load`. Make sure the CUDA toolkit and a compatible compiler are in `PATH`; the first run may take a minute to build the extensions.
+
+### 6. Quick smoke test
+
+You can verify that everything is wired up by launching a tiny 2‑D experiment (no dataset downloads needed):
+
+```bash
+python run.py --config 2d_data --name smoke_test --method dlpm --epochs 1 --eval 1 --check 1 --n_max_batch 2 --train_reverse_steps 10
+```
+
+This should create checkpoints under `models/smoke_test/`.
+
+### 7. Typical training & evaluation flow
+
+Train (example on MNIST, see `dlpm/configs/mnist.yml` for parameters):
+
+```bash
+python run.py --config mnist --name dlpm_mnist --method dlpm --epochs 100 --eval 50 --check 50 --train_reverse_steps 1000
+```
+
+Evaluate/generate from the saved checkpoints:
+
+```bash
+python eval.py --config mnist --name dlpm_mnist --method dlpm --epochs 100 --eval 100 --generate 2000 --reverse_steps 1000
+```
+
+Both scripts must be run from the repository root so that the in-tree `bem` and `dlpm` packages can be imported without modifying `PYTHONPATH`.
 
 ## Examples
 
