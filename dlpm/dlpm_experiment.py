@@ -104,6 +104,7 @@ def init_method_by_parameter(p):
     chosen_gen_model = p['method']
     assert chosen_gen_model in ['dlpm', 'lim'], f"chosen_gen_model should be in ['dlpm', 'lim'], got {chosen_gen_model}"
     LIM = (chosen_gen_model == 'lim')
+    beta = p[chosen_gen_model].get('beta', 0.0)
     if LIM:
         method = GenerativeLevyProcess(alpha = p[chosen_gen_model]['alpha'],
                                     device = p['device'],
@@ -113,6 +114,7 @@ def init_method_by_parameter(p):
                                     # clamp_a=p['training'][chosen_gen_model]['clamp_a'],
                                     # clamp_eps=p['training'][chosen_gen_model]['clamp_eps'],
                                     LIM = LIM, # use continuous LIM
+                                    beta = beta,
         )
     else:
         method = GenerativeLevyProcess(alpha = p[chosen_gen_model]['alpha'],
@@ -127,6 +129,7 @@ def init_method_by_parameter(p):
                                     LIM = LIM, # do not use continuous LIM
                                     scale = p[chosen_gen_model]['scale'],
                                     input_scaling=p[chosen_gen_model]['input_scaling'],
+                                    beta = beta,
         )
     return method
 
@@ -151,4 +154,3 @@ def init_models_by_parameter(p):
 
 def reset_models(p):
     return init_models_by_parameter(p)
-

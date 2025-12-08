@@ -11,6 +11,7 @@ method: dlpm
 
 dlpm:
   alpha: 1.8 #1.9
+  beta: 0.0
   reverse_steps: 4000
   isotropic: true
   mean_predict: EPSILON

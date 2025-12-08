@@ -11,6 +11,10 @@ def update_parameters_before_loading(p, args):
     if args.alpha is not None:
         p[method]['alpha'] = args.alpha
     
+    # override beta if provided
+    if hasattr(args, 'beta') and (args.beta is not None):
+        p[method]['beta'] = args.beta
+    
     if args.epochs is not None:
         p['run']['epochs'] = args.epochs
     
@@ -207,6 +211,7 @@ def parse_args():
 
     # DIFFUSION
     parser.add_argument('--alpha', help='alpha value for diffusion', default=None, type = float)
+    parser.add_argument('--beta', help='skewness parameter beta for alpha-stable noise', default=None, type=float)
     parser.add_argument('--non_iso', help='use non isotropic noise in the diffusion', action='store_true', default = False)
     parser.add_argument('--non_iso_data', help='use non isotropic data', action='store_true', default = False)
     parser.add_argument('--median', help='use median of mean. Specify (outer, inner).', nargs ='+', default = None)
