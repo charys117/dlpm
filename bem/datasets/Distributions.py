@@ -169,9 +169,7 @@ def gen_sas_pvn(
     abs_beta = abs(beta)
     eta = sigma * (1.0 - abs_beta) ** (1.0 / alpha)
     theta = sigma * math.copysign(abs_beta ** (1.0 / alpha), beta)
-    # lambda controls the S0 <-> S1 location difference:
-    #   mu0 = lambda + mu1, with mu1=0 for our S1 mixture.
-    lambda_ = sigma * beta * math.tan(math.pi * alpha / 2.0)
+
 
     # Helper to sample P and V with broadcasting
     batch_size = size[0]
@@ -222,7 +220,7 @@ def gen_sas_pvn(
     N = torch.randn(size=size, device=device)
 
     # Construct PVN mixture, with zero constant shift (mu0 - lambda = 0)
-    Y = eta * torch.sqrt(P) * N + theta * V + lambda_
+    Y = eta * torch.sqrt(P) * N + theta * V
 
     if clamp_eps is not None:
         Y = torch.clamp(Y, -clamp_eps, clamp_eps)

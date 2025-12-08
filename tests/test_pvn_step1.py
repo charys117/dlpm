@@ -36,9 +36,7 @@ def _sample_scipy(alpha, beta, n=20000, seed=0):
     with zero constant shift in the mixture.
     """
     rng = np.random.default_rng(seed=seed)
-    sigma = 1.0
-    lam = sigma * beta * np.tan(np.pi * alpha / 2.0)
-    y = st.levy_stable.rvs(alpha, beta, loc=lam, scale=sigma, size=n, random_state=rng)
+    y = st.levy_stable.rvs(alpha, beta, loc=0, scale=1, size=n, random_state=rng)
     return y
 
 
