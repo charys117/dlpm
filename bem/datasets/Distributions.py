@@ -108,6 +108,8 @@ def gen_sas_pvn(
     isotropic=True,
     clamp_eps=None,
     sigma=1.0,
+    clamp_v=None,
+    clamp_a=None,
 ):
     """
     Generate alpha-stable noise using the PVN decomposition from
@@ -169,7 +171,7 @@ def gen_sas_pvn(
     abs_beta = abs(beta)
     eta = sigma * (1.0 - abs_beta) ** (1.0 / alpha)
     theta = sigma * math.copysign(abs_beta ** (1.0 / alpha), beta)
-    beta_sign = 1.0 if beta >= 0 else -1.0
+    beta_sign = 1.0  # V is sampled with positive skewness
 
 
     # Helper to sample P and V with broadcasting
@@ -183,10 +185,24 @@ def gen_sas_pvn(
     # which returns a 1D tensor of shape [batch_size] when isotropic=True.
     if isotropic:
         # P is 1D [batch_size]; broadcast to full `size`
-        P_1d = gen_skewed_levy(alpha, (batch_size,), device=device, isotropic=True, random_state=rng)
+        P_1d = gen_skewed_levy(
+            alpha,
+            (batch_size,),
+            device=device,
+            isotropic=True,
+            clamp_a=clamp_a,
+            random_state=rng,
+        )
         P = match_last_dims(P_1d, size)
     else:
-        P = gen_skewed_levy(alpha, size, device=device, isotropic=False, random_state=rng)
+        P = gen_skewed_levy(
+            alpha,
+            size,
+            device=device,
+            isotropic=False,
+            clamp_a=clamp_a,
+            random_state=rng,
+        )
 
     # Sample V ~ S1(alpha, 1, 1, 0) using LevyStable.sample in S1 form
     # (we use is_isotropic=False here; isotropy is handled via P).
@@ -200,6 +216,8 @@ def gen_sas_pvn(
             type=torch.float32,
             is_isotropic=False,
         ).to(device)
+        if clamp_v is not None:
+            V_1d = torch.clamp(V_1d, -clamp_v, clamp_v)
         V = match_last_dims(V_1d, size)
     else:
         # full tensor sample
@@ -215,6 +233,8 @@ def gen_sas_pvn(
             type=torch.float32,
             is_isotropic=False,
         ).to(device)
+        if clamp_v is not None:
+            V_flat = torch.clamp(V_flat, -clamp_v, clamp_v)
         V = V_flat.view(*size)
 
     # Standard Gaussian tensor

@@ -41,7 +41,8 @@ eval:
     reverse_steps: 1000
     clip_denoised: false
     clamp_a: 20
-    clamp_eps: 100
+    clamp_eps: 200
+    clamp_v: 20
   
   lim: 
     deterministic: false # ODE
@@ -75,6 +76,7 @@ training:
 
     clamp_a: 20
     clamp_eps: 200
+    clamp_v: 20
 
   lim:
     ema_rates:

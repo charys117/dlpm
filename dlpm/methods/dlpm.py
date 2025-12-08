@@ -65,6 +65,7 @@ class DLPM:
         clamp_eps = None,
         scale = 'scale_preserving',
         beta = 0.0,
+        clamp_v = None,
     ):
         self.alpha = alpha
         self.device = device
@@ -73,6 +74,7 @@ class DLPM:
         self.use_single_a_chain = True
         self.scale = scale
         self.beta = beta
+        self.clamp_v = clamp_v
 
         # 1d noising schedules
         self.gammas, self.bargammas, self.sigmas, self.barsigmas = \
@@ -104,6 +106,8 @@ class DLPM:
                 device=self.device,
                 isotropic=isotropic,
                 clamp_eps=clamp_eps,
+                clamp_a=clamp_a,
+                clamp_v=clamp_v,
             )
         
         self.A = None

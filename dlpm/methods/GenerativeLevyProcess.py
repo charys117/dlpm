@@ -58,6 +58,7 @@ class GenerativeLevyProcess:
             LIM = False, # set dlpm heavy-tailed diffusion to continuous time LIM
             scale = 'scale_preserving',
             input_scaling = False,
+            clamp_v = None,
             beta = 0.0,
             ):
         
@@ -71,6 +72,7 @@ class GenerativeLevyProcess:
         self.isotropic = isotropic
         self.LIM = LIM
         self.input_scaling = input_scaling
+        self.clamp_v = clamp_v
         self.beta = beta
 
         assert (self.model_mean_type == ModelMeanType.EPSILON) \
@@ -90,7 +92,8 @@ class GenerativeLevyProcess:
                         time_spacing = time_spacing,
                         isotropic = isotropic,
                         scale=scale,
-                        beta=self.beta)
+                        beta=self.beta,
+                        clamp_v=self.clamp_v)
     
     def _scale_timesteps(self, t):
         if self.rescale_timesteps:
@@ -615,7 +618,7 @@ class GenerativeLevyProcess:
     def training_losses_dlpm(self,
                             model,
                             x_start,
-                            loss_type = 'EPSILON',
+                            loss_type = LossType.EPS_LOSS,
                             lploss = 2.0,
                             loss_monte_carlo  = 'mean',
                             monte_carlo_outer = 1,
@@ -623,14 +626,43 @@ class GenerativeLevyProcess:
                             model_kwargs = None,
                             clamp_a = None,
                             clamp_eps = None,
+                            clamp_v = None,
                             ):
         assert self.model_mean_type == ModelMeanType.EPSILON, 'only epsilon model output is supported for the moment'
         assert loss_type == LossType.EPS_LOSS, 'only epsilon loss is supported for the moment'
         if model_kwargs is None:
             model_kwargs = {}
 
-        self.dlpm.gen_a.setParams(clamp_a = clamp_a)
-        self.dlpm.gen_eps.setParams(clamp_eps = clamp_eps)
+        # Update generator parameters, including clamps
+        if abs(self.dlpm.beta) < 1e-12:
+            self.dlpm.gen_a.setParams(
+                alpha=self.alpha,
+                device=self.device,
+                isotropic=self.isotropic,
+                clamp_a=clamp_a,
+            )
+            self.dlpm.gen_eps.setParams(
+                alpha=self.alpha,
+                device=self.device,
+                isotropic=self.isotropic,
+                clamp_eps=clamp_eps,
+            )
+        else:
+            self.dlpm.gen_a.setParams(
+                alpha=self.alpha,
+                device=self.device,
+                isotropic=self.isotropic,
+                clamp_a=clamp_a,
+            )
+            self.dlpm.gen_eps.setParams(
+                alpha=self.alpha,
+                beta=self.dlpm.beta,
+                device=self.device,
+                isotropic=self.isotropic,
+                clamp_eps=clamp_eps,
+                clamp_a=clamp_a,
+                clamp_v=clamp_v,
+            )
 
         if abs(self.dlpm.beta) < 1e-12:
             # ---- Original symmetric DLPM loss path ----
