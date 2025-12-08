@@ -169,6 +169,7 @@ def gen_sas_pvn(
     abs_beta = abs(beta)
     eta = sigma * (1.0 - abs_beta) ** (1.0 / alpha)
     theta = sigma * math.copysign(abs_beta ** (1.0 / alpha), beta)
+    beta_sign = 1.0 if beta >= 0 else -1.0
 
 
     # Helper to sample P and V with broadcasting
@@ -192,7 +193,7 @@ def gen_sas_pvn(
     if isotropic:
         V_1d = _levy_stable_pvn.sample(
             alpha=alpha,
-            beta=1.0,
+            beta=beta_sign,
             size=batch_size,
             loc=0.0,
             scale=1.0,
@@ -207,7 +208,7 @@ def gen_sas_pvn(
             size_scalar *= d
         V_flat = _levy_stable_pvn.sample(
             alpha=alpha,
-            beta=1.0,
+            beta=beta_sign,
             size=size_scalar,
             loc=0.0,
             scale=1.0,

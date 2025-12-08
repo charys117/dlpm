@@ -644,40 +644,55 @@ class GenerativeLevyProcess:
             #     t = torch.exp(torch.normal(P_mean, P_std, size=[len(x_start)]).to(self.device)).int()
             # else:
             #     raise NotImplementedError(self.dlpm.scale)
-            
-            # setup median of means estimator
-            total_monte_carlo = monte_carlo_outer*monte_carlo_inner
-            x_start_extended = x_start.repeat(total_monte_carlo, *([1]*len(x_start.shape[1:])))
+
+            # setup median-of-means estimator
+            total_monte_carlo = monte_carlo_outer * monte_carlo_inner
+            x_start_extended = x_start.repeat(total_monte_carlo, *([1] * len(x_start.shape[1:])))
             t_extended = t.repeat(total_monte_carlo)
-            outer_shape = torch.tensor(x_start.shape) 
-            outer_shape[0] *= monte_carlo_outer 
+
+            outer_shape = torch.tensor(x_start.shape)
+            outer_shape[0] *= monte_carlo_outer
             A = self.dlpm.get_one_rv_faster_sampling(list(outer_shape))
-            A_extended = A.repeat(monte_carlo_inner, *([1]*len(A.shape[1:])))
-            z_t_extended = torch.randn_like(x_start_extended, device=self.device) # inner expectation Gaussian (z_t)
-            # print('shapes', x_start_extended.shape, t_extended.shape, A_extended.shape, z_t_extended.shape)
+            A_extended = A.repeat(monte_carlo_inner, *([1] * len(A.shape[1:])))
+
+            z_t_extended = torch.randn_like(x_start_extended, device=self.device)  # inner expectation Gaussian (z_t)
+
             # get loss elements
-            x_t, eps_t = self.dlpm.get_one_rv_loss_elements(t_extended, x_start_extended, A_extended, z_t_extended)
+            x_t, eps_t = self.dlpm.get_one_rv_loss_elements(
+                t_extended, x_start_extended, A_extended, z_t_extended
+            )
 
             # run model
             input_scaling = 1.0
             if self.input_scaling and (self.dlpm.scale == 'scale_exploding'):
-                input_scaling = match_last_dims(1 / (1+self.dlpm.barsigmas[t_extended]), x_t.shape)
-            model_eps = model(x_t * input_scaling,  self._scale_timesteps(t_extended), **model_kwargs)
-            
-            # assert model_eps.shape == x_start_extended.shape
+                input_scaling = match_last_dims(
+                    1 / (1 + self.dlpm.barsigmas[t_extended]),
+                    x_t.shape,
+                )
+
+            model_eps = model(
+                x_t * input_scaling,
+                self._scale_timesteps(t_extended),
+                **model_kwargs,
+            )
 
             # compute loss with the right exponent
             losses = compute_loss_terms(model_eps, eps_t, lploss)
-            assert not torch.isnan(losses).any(), 'Nan in losses'
+            assert not torch.isnan(losses).any(), "Nan in losses"
 
-            if loss_monte_carlo == 'mean':
-                loss = losses.mean()#(dim = 0)
-            elif loss_monte_carlo == 'median':
+            if loss_monte_carlo == "mean":
+                loss = losses.mean()
+            elif loss_monte_carlo == "median":
                 # Run median of means (rather than mean of medians)
                 losses = losses.reshape(monte_carlo_outer, monte_carlo_inner, x_start.shape[0])
-                losses = losses.mean(dim = 1)
-                losses, _ = losses.median(dim = 0)
+                losses = losses.mean(dim=1)
+                losses, _ = losses.median(dim=0)
                 loss = losses.mean()
+            else:
+                raise ValueError(f"Unknown loss_monte_carlo: {loss_monte_carlo}")
+
+            return loss
+
         else:
             # ---- PVN epsilon-prediction loss for skewed case ----
             batch_size = x_start.shape[0]
@@ -692,49 +707,49 @@ class GenerativeLevyProcess:
             )
 
             total_monte_carlo = monte_carlo_outer * monte_carlo_inner
-            x_start_extended = x_start.repeat(total_monte_carlo, *([1] * (x_start.ndim - 1)))
+            x_start_extended = x_start.repeat(
+                total_monte_carlo, *([1] * (x_start.ndim - 1))
+            )
             t_extended = t.repeat(total_monte_carlo)
 
             # sample PVN eps via DLPM's generator (uses gen_sas_pvn when beta != 0)
             eps_extended = self.dlpm.gen_eps.generate(size=x_start_extended.shape)
 
             # construct x_t using q_sample with provided eps
-            x_t_extended, _ = self.q_sample(x_start_extended, t_extended, eps=eps_extended)
+            x_t_extended, _ = self.q_sample(
+                x_start_extended, t_extended, eps=eps_extended
+            )
 
+            # input scaling, same rule as symmetric case
             input_scaling = 1.0
-            if self.input_scaling and (self.dlpm.scale == 'scale_exploding'):
-                input_scaling = match_last_dims(1 / (1 + self.dlpm.barsigmas[t_extended]), x_t_extended.shape)
+            if self.input_scaling and (self.dlpm.scale == "scale_exploding"):
+                input_scaling = match_last_dims(
+                    1 / (1 + self.dlpm.barsigmas[t_extended]),
+                    x_t_extended.shape,
+                )
 
+            # run model
             model_eps = model(
                 x_t_extended * input_scaling,
                 self._scale_timesteps(t_extended),
                 **model_kwargs,
             )
 
-            # compute per-example losses
-            diff = model_eps - eps_extended
-            if lploss == 2.0:
-                per_example = diff.pow(2.0)
-            elif lploss == 1.0:
-                per_example = diff.abs()
-            else:
-                per_example = diff.abs().pow(lploss)
+            # use the SAME loss helper as symmetric DLPM
+            losses = compute_loss_terms(model_eps, eps_extended, lploss)
+            assert not torch.isnan(losses).any(), "Nan in losses"
 
-            # reduce over non-batch dims
-            while per_example.ndim > 1:
-                per_example = per_example.mean(dim=-1)
-
-            if loss_monte_carlo == 'mean':
-                loss = per_example.mean()
-            elif loss_monte_carlo == 'median':
-                losses = per_example.reshape(monte_carlo_outer, monte_carlo_inner, x_start.shape[0])
+            if loss_monte_carlo == "mean":
+                loss = losses.mean()
+            elif loss_monte_carlo == "median":
+                losses = losses.reshape(monte_carlo_outer, monte_carlo_inner, x_start.shape[0])
                 losses = losses.mean(dim=1)
                 losses, _ = losses.median(dim=0)
                 loss = losses.mean()
             else:
                 raise ValueError(f"Unknown loss_monte_carlo: {loss_monte_carlo}")
 
-        return loss
+            return loss
         
 
     def training_losses_lim(self, 
