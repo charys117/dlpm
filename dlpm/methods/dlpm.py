@@ -63,7 +63,8 @@ class DLPM:
         isotropic = True, # isotropic levy noise
         clamp_a = None,
         clamp_eps = None,
-        scale = 'scale_preserving'
+        scale = 'scale_preserving',
+        beta = 0.0,
     ):
         self.alpha = alpha
         self.device = device
@@ -71,6 +72,7 @@ class DLPM:
         self.isotropic = isotropic
         self.use_single_a_chain = True
         self.scale = scale
+        self.beta = beta
 
         # 1d noising schedules
         self.gammas, self.bargammas, self.sigmas, self.barsigmas = \
@@ -86,11 +88,23 @@ class DLPM:
                                     isotropic=isotropic,
                                     clamp_a = clamp_a)
         
-        self.gen_eps = Data.Generator('sas',
-                                      alpha = self.alpha, 
-                                      device=self.device,
-                                      isotropic=isotropic,
-                                      clamp_eps = clamp_eps)
+        if abs(self.beta) < 1e-12:
+            self.gen_eps = Data.Generator(
+                'sas',
+                alpha=self.alpha,
+                device=self.device,
+                isotropic=isotropic,
+                clamp_eps=clamp_eps,
+            )
+        else:
+            self.gen_eps = Data.Generator(
+                'sas_pvn',
+                alpha=self.alpha,
+                beta=self.beta,
+                device=self.device,
+                isotropic=isotropic,
+                clamp_eps=clamp_eps,
+            )
         
         self.A = None
         self.Sigmas = None
@@ -412,4 +426,3 @@ class DLPM:
     #     t = self.get_t_to_batch_size(Xbatch, t)
     #     a_t_1, a_t_prime, a_t = self.get_noises_to_incoming_batch_dims(Xbatch, t)
     #     return g, bg, t, a_t_1, a_t_prime, a_t
-

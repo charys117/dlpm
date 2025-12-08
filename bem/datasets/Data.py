@@ -2,7 +2,15 @@ import numpy as np
 from inspect import signature
 from torch.utils.data import Dataset
 
-from .Distributions import *
+from .Distributions import (
+    gen_sas,
+    gen_sas_pvn,
+    gen_skewed_levy,
+    gen_swiss_roll,
+    sample_2_gmm,
+    sample_grid_gmm,
+    sample_grid_sas,
+)
 from .torchlevy.levy import LevyStable
 
 
@@ -22,7 +30,8 @@ class Generator(Dataset):
         'swiss_roll',
         'skewed_levy',
         'sas',
-        'sas_grid'
+        'sas_grid',
+        'sas_pvn',
     ]
     
     def __init__(self, operation, transform = None, *args, **kwargs):
@@ -36,12 +45,13 @@ class Generator(Dataset):
         self.available_distributions_dict = \
         {'gmm_2': sample_2_gmm,
         'gmm_grid': sample_grid_gmm,
-        'swiss_roll':gen_swiss_roll,
+        'swiss_roll': gen_swiss_roll,
         'skewed_levy': gen_skewed_levy, # self.levy_stable.gen_skewed_levy,#gen_skewed_levy,
         'sas': gen_sas,#self.levy_stable.gen_sas,#gen_sas,
         #'gaussian_noising': gaussian_noising,
         #'stable_noising': stable_noising,
-        'sas_grid': sample_grid_sas
+        'sas_grid': sample_grid_sas,
+        'sas_pvn': gen_sas_pvn,
         }
 
 

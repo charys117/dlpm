@@ -1,10 +1,14 @@
 # file to generate some default data like swiss roll, GMM, levy variables
 
-from sklearn.datasets import make_swiss_roll
-from sklearn.mixture import GaussianMixture
 import numpy as np
 import torch
+import math
 import scipy
+from sklearn.datasets import make_swiss_roll
+from sklearn.mixture import GaussianMixture
+from .torchlevy.levy import LevyStable
+
+_levy_stable_pvn = LevyStable()
 
 def match_last_dims(data, size):
     """
@@ -34,7 +38,8 @@ def gen_skewed_levy(alpha,
                     size, 
                     device = None, 
                     isotropic = True,
-                    clamp_a = None):
+                    clamp_a = None,
+                    random_state = None):
     if (alpha > 2.0 or alpha <= 0.):
         raise Exception('Wrong value of alpha ({}) for skewed levy r.v generation'.format(alpha))
     if alpha == 2.0:
@@ -42,10 +47,10 @@ def gen_skewed_levy(alpha,
         return ret if device is None else ret.to(device)
     # generates the alplha/2, 1, 0, 2*np.cos(np.pi*alpha/4)**(2/alpha)
     if isotropic:
-        ret = torch.tensor(scipy.stats.levy_stable.rvs(alpha/2, 1, loc=0, scale=2*np.cos(np.pi*alpha/4)**(2/alpha), size=size[0]), dtype=torch.float32)
+        ret = torch.tensor(scipy.stats.levy_stable.rvs(alpha/2, 1, loc=0, scale=2*np.cos(np.pi*alpha/4)**(2/alpha), size=size[0], random_state=random_state), dtype=torch.float32)
         ret = match_last_dims(ret, size)
     else:
-        ret = torch.tensor(scipy.stats.levy_stable.rvs(alpha/2, 1, loc=0, scale=2*np.cos(np.pi*alpha/4)**(2/alpha), size=size), dtype=torch.float32)
+        ret = torch.tensor(scipy.stats.levy_stable.rvs(alpha/2, 1, loc=0, scale=2*np.cos(np.pi*alpha/4)**(2/alpha), size=size, random_state=random_state), dtype=torch.float32)
     if clamp_a is not None:
         ret = torch.clamp(ret, 0., clamp_a)
     return ret if device is None else ret.to(device)
@@ -59,9 +64,14 @@ def gen_sas(alpha,
             a = None, 
             device = None, 
             isotropic = True,
-            clamp_eps = None):
+            clamp_eps = None,
+            random_state = None):
     if a is None:
-        a = gen_skewed_levy(alpha, size, device = device, isotropic = isotropic)
+        if random_state is None:
+            # seed NumPy from torch for reproducibility w.r.t. torch seed
+            rng_seed = torch.randint(0, 2**32, (1,), device=device if device is not None else "cpu").item()
+            random_state = np.random.default_rng(rng_seed)
+        a = gen_skewed_levy(alpha, size, device = device, isotropic = isotropic, random_state=random_state)
     ret = torch.randn(size=size, device=device)
     
     #if device is not None:
@@ -88,6 +98,136 @@ def gen_sas(alpha,
         if device is not None:
             ret = ret.to(device)
         return torch.sqrt(a)* ret'''
+
+
+def gen_sas_pvn(
+    alpha,
+    beta,
+    size,
+    device=None,
+    isotropic=True,
+    clamp_eps=None,
+    sigma=1.0,
+):
+    """
+    Generate alpha-stable noise using the PVN decomposition from
+    Teimouri (2018), Proposition 1.1, in S0 parameterization.
+
+    Y ~ S0(alpha, beta, sigma, mu0) with mu0 = lambda, obtained by sampling
+    in S1 form with zero location and then adding the S0/S1 shift:
+        Y = eta * sqrt(P) * N + theta * V + lambda
+    where:
+      - P ~ S1(alpha/2, 1, scale = 2 cos(pi alpha / 4)^{2/alpha}, 0) (positive stable)
+      - V ~ S1(alpha, 1, 1, 0)
+      - N ~ N(0, 1)
+      - eta  = sigma * (1 - |beta|)^{1/alpha}
+      - theta = sigma * sign(beta) * |beta|^{1/alpha}
+      - lambda = sigma * beta * tan(pi alpha / 2)
+
+    The existing `gen_skewed_levy` already samples P with the correct S1 law
+    but with scale 2 * cos(pi alpha / 4)^{2/alpha}, so we can use sqrt(P)
+    instead of sqrt(2P_0). V is sampled via the LevyStable class in S1 form.
+
+    For beta = 0, this function falls back to the original symmetric
+    normal-variance-mix representation `gen_sas` to preserve existing
+    behavior exactly.
+
+    Arguments
+    ---------
+    alpha : float
+        Stability parameter (0 < alpha <= 2, alpha != 1 recommended).
+    beta : float
+        Skewness parameter in [-1, 1].
+    size : tuple or torch.Size
+        Target tensor shape, including batch dimension.
+    device : torch.device or str or None
+    isotropic : bool
+        If True, sample one P and V per batch element and broadcast across
+        remaining dimensions. If False, sample a full tensor of P and V
+        of shape `size`.
+    clamp_eps : float or None
+        If not None, clamp output to [-clamp_eps, clamp_eps].
+    sigma : float
+        Scale parameter of the target stable law (default 1.0).
+    """
+    if alpha <= 0.0 or alpha > 2.0:
+        raise ValueError(f"alpha must be in (0, 2], got {alpha}")
+
+    # symmetric case: fully reuse old NVM implementation for exact compatibility
+    if abs(beta) < 1e-12:
+        return gen_sas(alpha, size, a=None, device=device, isotropic=isotropic, clamp_eps=clamp_eps)
+
+    if alpha == 1.0:
+        raise NotImplementedError("PVN sampler is not implemented for alpha == 1.")
+
+    if device is None:
+        device = torch.device("cpu")
+    elif isinstance(device, str):
+        device = torch.device(device)
+
+    # constants from Proposition 1.1 (Teimouri, 2018)
+    abs_beta = abs(beta)
+    eta = sigma * (1.0 - abs_beta) ** (1.0 / alpha)
+    theta = sigma * math.copysign(abs_beta ** (1.0 / alpha), beta)
+    # lambda controls the S0 <-> S1 location difference:
+    #   mu0 = lambda + mu1, with mu1=0 for our S1 mixture.
+    lambda_ = sigma * beta * math.tan(math.pi * alpha / 2.0)
+
+    # Helper to sample P and V with broadcasting
+    batch_size = size[0]
+
+    # NumPy RNG seeded from torch for stable reproducibility
+    rng_seed = torch.randint(0, 2**32, (1,), device=device).item()
+    rng = np.random.default_rng(rng_seed)
+
+    # Sample P ~ positive alpha/2-stable, using existing gen_skewed_levy
+    # which returns a 1D tensor of shape [batch_size] when isotropic=True.
+    if isotropic:
+        # P is 1D [batch_size]; broadcast to full `size`
+        P_1d = gen_skewed_levy(alpha, (batch_size,), device=device, isotropic=True, random_state=rng)
+        P = match_last_dims(P_1d, size)
+    else:
+        P = gen_skewed_levy(alpha, size, device=device, isotropic=False, random_state=rng)
+
+    # Sample V ~ S1(alpha, 1, 1, 0) using LevyStable.sample in S1 form
+    # (we use is_isotropic=False here; isotropy is handled via P).
+    if isotropic:
+        V_1d = _levy_stable_pvn.sample(
+            alpha=alpha,
+            beta=1.0,
+            size=batch_size,
+            loc=0.0,
+            scale=1.0,
+            type=torch.float32,
+            is_isotropic=False,
+        ).to(device)
+        V = match_last_dims(V_1d, size)
+    else:
+        # full tensor sample
+        size_scalar = 1
+        for d in size:
+            size_scalar *= d
+        V_flat = _levy_stable_pvn.sample(
+            alpha=alpha,
+            beta=1.0,
+            size=size_scalar,
+            loc=0.0,
+            scale=1.0,
+            type=torch.float32,
+            is_isotropic=False,
+        ).to(device)
+        V = V_flat.view(*size)
+
+    # Standard Gaussian tensor
+    N = torch.randn(size=size, device=device)
+
+    # Construct PVN mixture, with zero constant shift (mu0 - lambda = 0)
+    Y = eta * torch.sqrt(P) * N + theta * V + lambda_
+
+    if clamp_eps is not None:
+        Y = torch.clamp(Y, -clamp_eps, clamp_eps)
+
+    return Y
 
 
 def _between_minus_1_1_with_quantile(x, quantile, scale_to_minus_1_1 = True):
@@ -229,4 +369,3 @@ def sample_grid_sas(n_samples,
     if between_minus_1_1:
         data = _between_minus_1_1_with_quantile(data, quantile_cutoff) # should do something with 1 / sqrt(n)
     return data[torch.randperm(data.size()[0])]
-
