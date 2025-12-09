@@ -291,7 +291,8 @@ class TrainingManager:
         torch.save(eval_save, eval_path)
     
     def load_eval_metrics(self, eval_path):
-        eval_save = torch.load(eval_path)
+        # eval files may contain full pickles (not weights-only); explicitly allow loading
+        eval_save = torch.load(eval_path, weights_only=False)
         assert 'eval' in eval_save, 'no eval subdict in eval file'
         # load eval metrics
         self.eval.evals.update(eval_save['eval'])

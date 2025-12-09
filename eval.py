@@ -11,6 +11,17 @@ SAVE_ANIMATION_PATH = './animation'
 
 
 def eval_exp(config_path):
+    """
+    Entry point for evaluation / generation.
+
+    This uses the same configuration machinery as run.py, including:
+    - method: 'dlpm' or 'lim'
+    - alpha, beta (skewness for PVN / skewed DLPM)
+    - eval.dlpm clamps: clamp_a, clamp_eps, clamp_v
+
+    All of these are loaded from the YAML config and/or overridden from the CLI
+    via script_utils.update_parameters_before_loading().
+    """
     args = parse_args()
     # open and get parameters from file
     p = FileHandler.get_param_from_config(config_path, args.config + '.yml')

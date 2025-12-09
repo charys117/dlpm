@@ -527,10 +527,19 @@ class GenerativeLevyProcess:
                 print_progression=False, 
                 get_sample_history=False,
                 clamp_a = None,
-                clamp_eps = None):
+                clamp_eps = None,
+                clamp_v = None):
         
-        self.dlpm.gen_a.setParams(clamp_a = clamp_a)
-        self.dlpm.gen_eps.setParams(clamp_eps = clamp_eps)
+        if abs(self.dlpm.beta) < 1e-12:
+            self.dlpm.gen_a.setParams(clamp_a = clamp_a)
+            self.dlpm.gen_eps.setParams(clamp_eps = clamp_eps)
+        else:
+            self.dlpm.gen_a.setParams(clamp_a = clamp_a)
+            self.dlpm.gen_eps.setParams(
+                clamp_eps = clamp_eps,
+                clamp_a = clamp_a,
+                clamp_v = clamp_v,
+            )
 
         model = models['default']
 
